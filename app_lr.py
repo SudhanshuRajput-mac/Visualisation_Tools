@@ -353,6 +353,55 @@ def create_loss_plot(losses, learning_rate, momentum):
         )
     
     return fig
+# Additional extension ideas to add to the main app:
+
+def add_adam_optimizer():
+    """Add Adam optimizer option"""
+    st.sidebar.subheader("Adam Optimizer")
+    use_adam = st.sidebar.checkbox("Use Adam", value=False)
+    if use_adam:
+        beta1 = st.sidebar.slider("β₁", 0.8, 0.999, 0.9, 0.001)
+        beta2 = st.sidebar.slider("β₂", 0.8, 0.999, 0.999, 0.001)
+        epsilon = st.sidebar.number_input("ε", 1e-8, 1e-4, 1e-8, format="%.0e")
+        return True, beta1, beta2, epsilon
+    return False, 0, 0, 0
+
+def create_3d_surface_plot(visualizer, function_type, points):
+    """3D surface plot for advanced visualization"""
+    x = np.linspace(-5, 5, 50)
+    y = np.linspace(-5, 5, 50)
+    X, Y = np.meshgrid(x, y)
+    Z = visualizer.functions[function_type](X, Y)
+    
+    fig = go.Figure(data=[
+        go.Surface(
+            x=X, y=Y, z=Z,
+            colorscale='Viridis',
+            opacity=0.7,
+            name='Loss Surface'
+        ),
+        go.Scatter3d(
+            x=points[:, 0], y=points[:, 1], 
+            z=[visualizer.calculate_loss(function_type, p) for p in points],
+            mode='markers+lines',
+            marker=dict(size=4, color='red'),
+            line=dict(color='red', width=4),
+            name='Optimization Path'
+        )
+    ])
+    
+    return fig
+
+def add_comparison_mode():
+    """Compare multiple learning rates simultaneously"""
+    st.sidebar.subheader("Comparison Mode")
+    compare_lr = st.sidebar.checkbox("Compare Multiple LR", value=False)
+    if compare_lr:
+        lr1 = st.sidebar.slider("LR 1", 0.001, 1.0, 0.01, 0.001)
+        lr2 = st.sidebar.slider("LR 2", 0.001, 1.0, 0.1, 0.001)
+        lr3 = st.sidebar.slider("LR 3", 0.001, 1.0, 0.5, 0.001)
+        return True, [lr1, lr2, lr3]
+    return False, []
 
 if __name__ == "__main__":
     main()
