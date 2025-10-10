@@ -6,3 +6,4 @@ pillow
 plotly
 scipy
 altair
+imageio
