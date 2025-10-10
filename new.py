@@ -191,7 +191,6 @@ def main():
     with st.sidebar.expander("📊 Visualization Options"):
         show_3d = st.checkbox("Show 3D Surface", True)
         show_contour = st.checkbox("Show Contour Plot", True)
-        show_animation = st.checkbox("Animate Optimization", False)
         show_comparison = st.checkbox("Compare Learning Rates", False)
     
     # Main content area
@@ -219,7 +218,7 @@ def main():
                 # Create comprehensive visualizations
                 create_enhanced_visualizations(
                     visualizer, function_type, points, losses, learning_rate, 
-                    optimizer_type, show_3d, show_contour, show_animation
+                    optimizer_type, show_3d, show_contour
                 )
                 
                 # Learning rate comparison if enabled
@@ -242,7 +241,11 @@ def momentum_gradient_descent(visualizer, function_name, initial_point, learning
     
     for i in range(iterations):
         try:
-            grad = visualizer.gradients[function_name](*current_point)
+            if function_name == "Quadratic (1D)":
+                grad = np.array([visualizer.gradients[function_name](current_point[0])])
+            else:
+                grad = visualizer.gradients[function_name](current_point[0], current_point[1])
+                
             velocity = momentum * velocity + learning_rate * grad
             current_point = current_point - velocity
             points.append(current_point.copy())
@@ -270,7 +273,10 @@ def adam_optimizer(visualizer, function_name, initial_point, learning_rate, iter
     
     for t in range(1, iterations + 1):
         try:
-            grad = visualizer.gradients[function_name](*current_point)
+            if function_name == "Quadratic (1D)":
+                grad = np.array([visualizer.gradients[function_name](current_point[0])])
+            else:
+                grad = visualizer.gradients[function_name](current_point[0], current_point[1])
             
             m = beta1 * m + (1 - beta1) * grad
             v = beta2 * v + (1 - beta2) * (grad ** 2)
@@ -303,7 +309,10 @@ def rmsprop_optimizer(visualizer, function_name, initial_point, learning_rate, i
     
     for i in range(iterations):
         try:
-            grad = visualizer.gradients[function_name](*current_point)
+            if function_name == "Quadratic (1D)":
+                grad = np.array([visualizer.gradients[function_name](current_point[0])])
+            else:
+                grad = visualizer.gradients[function_name](current_point[0], current_point[1])
             
             cache = rho * cache + (1 - rho) * (grad ** 2)
             current_point = current_point - learning_rate * grad / (np.sqrt(cache) + epsilon)
@@ -330,7 +339,11 @@ def run_optimization(visualizer, function_name, initial_point, learning_rate, it
     
     for i in range(iterations):
         try:
-            grad = visualizer.gradients[function_name](*current_point)
+            if function_name == "Quadratic (1D)":
+                grad = np.array([visualizer.gradients[function_name](current_point[0])])
+            else:
+                grad = visualizer.gradients[function_name](current_point[0], current_point[1])
+                
             current_point = current_point - learning_rate * grad
             points.append(current_point.copy())
             losses.append(visualizer.calculate_loss(function_name, current_point))
@@ -346,12 +359,12 @@ def run_optimization(visualizer, function_name, initial_point, learning_rate, it
             
     return np.array(points), np.array(losses)
 
-def create_enhanced_visualizations(visualizer, function_type, points, losses, learning_rate, optimizer_type, show_3d, show_contour, show_animation):
+def create_enhanced_visualizations(visualizer, function_type, points, losses, learning_rate, optimizer_type, show_3d, show_contour):
     # Create tabs for different visualizations
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Optimization Path", "📉 Loss Analysis", "🌊 3D Landscape", "📊 Performance Metrics", "🎓 Educational Insights"])
     
     with tab1:
-        create_optimization_path_tab(visualizer, function_type, points, losses, show_contour, show_animation)
+        create_optimization_path_tab(visualizer, function_type, points, losses, show_contour)
     
     with tab2:
         create_loss_analysis_tab(losses, learning_rate, optimizer_type)
@@ -368,7 +381,7 @@ def create_enhanced_visualizations(visualizer, function_type, points, losses, le
     with tab5:
         create_educational_insights_tab(learning_rate, losses, optimizer_type)
 
-def create_optimization_path_tab(visualizer, function_type, points, losses, show_contour, show_animation):
+def create_optimization_path_tab(visualizer, function_type, points, losses, show_contour):
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -405,7 +418,7 @@ def create_optimization_path_tab(visualizer, function_type, points, losses, show
                     x='Iteration',
                     y='Step Size',
                     tooltip=['Iteration', 'Step Size']
-                ).properties(title="Step Size Over Time")
+                ).properties(title="Step Size Over Time", height=200)
                 st.altair_chart(chart, use_container_width=True)
 
 def create_enhanced_1d_plot(visualizer, function_type, points, losses):
@@ -431,7 +444,11 @@ def create_enhanced_1d_plot(visualizer, function_type, points, losses):
     ), row=1, col=1)
     
     # Gradient magnitude
-    gradients = [abs(visualizer.quadratic_1d_grad(x[0])) for x in points]
+    if function_type == "Quadratic (1D)":
+        gradients = [abs(visualizer.quadratic_1d_grad(x[0])) for x in points]
+    else:
+        gradients = [np.linalg.norm(visualizer.gradients[function_type](x[0], x[1])) for x in points]
+        
     fig.add_trace(go.Scatter(
         x=np.arange(len(gradients)), y=gradients,
         mode='lines+markers', name='Gradient Magnitude',
@@ -468,29 +485,16 @@ def create_enhanced_2d_plot(visualizer, function_type, points, show_contour):
             name='Loss Surface'
         ))
     
-    # Enhanced optimization path with arrows
-    for i in range(len(points)-1):
-        fig.add_trace(go.Scatter(
-            x=[points[i, 0], points[i+1, 0]],
-            y=[points[i, 1], points[i+1, 1]],
-            mode='lines',
-            line=dict(color='red', width=3),
-            showlegend=False
-        ))
-        
-        # Add direction arrows
-        if i % 5 == 0 and i < len(points)-2:  # Add arrows every 5 steps to avoid clutter
-            fig.add_annotation(
-                x=points[i, 0], y=points[i, 1],
-                ax=points[i+1, 0], ay=points[i+1, 1],
-                xref="x", yref="y",
-                axref="x", ayref="y",
-                showarrow=True,
-                arrowhead=2,
-                arrowsize=1,
-                arrowwidth=2,
-                arrowcolor="red"
-            )
+    # Enhanced optimization path
+    fig.add_trace(go.Scatter(
+        x=points[:, 0], y=points[:, 1],
+        mode='lines+markers',
+        name='Optimization Path',
+        line=dict(color='red', width=4),
+        marker=dict(size=6, color=np.arange(len(points)), 
+                   colorscale='Viridis', showscale=True,
+                   colorbar=dict(title="Iteration"))
+    ))
     
     # Start and end points
     fig.add_trace(go.Scatter(
@@ -749,14 +753,12 @@ def create_educational_insights_tab(learning_rate, losses, optimizer_type):
     st.info(f"**{optimizer_type}**: {optimizer_insights.get(optimizer_type, '')}")
 
 def create_lr_comparison(visualizer, function_type, initial_point, iterations, optimizer_type):
-    st.sidebar.subheader("🔬 Learning Rate Comparison")
+    st.subheader("📊 Learning Rate Comparison")
     
-    lr_values = st.sidebar.text_input("LR values to compare (comma separated)", "0.01, 0.1, 0.5")
+    lr_values = st.text_input("LR values to compare (comma separated)", "0.01, 0.1, 0.5")
     lr_list = [float(x.strip()) for x in lr_values.split(",")]
     
-    if st.sidebar.button("Compare Learning Rates"):
-        st.subheader("📊 Learning Rate Comparison")
-        
+    if st.button("Compare Learning Rates"):
         comparison_data = []
         colors = ['red', 'blue', 'green', 'orange', 'purple']
         
@@ -768,6 +770,10 @@ def create_lr_comparison(visualizer, function_type, initial_point, iterations, o
                     points, losses = vanilla_gradient_descent(visualizer, function_type, initial_point, lr, iterations)
                 elif optimizer_type == "Momentum":
                     points, losses = momentum_gradient_descent(visualizer, function_type, initial_point, lr, iterations, 0.9)
+                elif optimizer_type == "Adam":
+                    points, losses = adam_optimizer(visualizer, function_type, initial_point, lr, iterations, 0.9, 0.999)
+                elif optimizer_type == "RMSprop":
+                    points, losses = rmsprop_optimizer(visualizer, function_type, initial_point, lr, iterations, 0.9)
                 
                 color = colors[i % len(colors)]
                 fig_compare.add_trace(go.Scatter(
@@ -787,4 +793,19 @@ def create_lr_comparison(visualizer, function_type, initial_point, iterations, o
         
         fig_compare.update_layout(
             title="Loss Curves for Different Learning Rates",
-            xaxis
+            xaxis_title="Iteration",
+            yaxis_title="Loss",
+            yaxis_type="log",
+            height=500
+        )
+        
+        st.plotly_chart(fig_compare, use_container_width=True)
+        
+        # Comparison table
+        if comparison_data:
+            df_compare = pd.DataFrame(comparison_data)
+            st.dataframe(df_compare.style.highlight_min(subset=['Final Loss'], color='lightgreen'), 
+                        use_container_width=True)
+
+if __name__ == "__main__":
+    main()
