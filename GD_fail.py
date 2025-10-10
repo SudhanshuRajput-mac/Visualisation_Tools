@@ -59,6 +59,7 @@ ax.set_xlabel("x (parameter)")
 ax.set_ylabel("Loss f(x)")
 
 # Animation
+# Animation
 def animate(i):
     point.set_data(x_values[i], f(x_values[i]))
     path.set_data(x_values[:i], [f(val) for val in x_values[:i]])
@@ -66,9 +67,11 @@ def animate(i):
 
 anim = FuncAnimation(fig, animate, frames=len(x_values), interval=200, repeat=False)
 
-# Convert animation to HTML
+# Convert animation to GIF (safe for Streamlit)
 buf = io.BytesIO()
-anim.save(buf, format='gif', fps=5)
+from matplotlib.animation import PillowWriter
+writer = PillowWriter(fps=5)
+anim.save(buf, writer=writer)
 st.image(buf.getvalue(), caption="Gradient Descent Animation", use_container_width=True)
 
 # Explanation section
