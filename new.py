@@ -81,22 +81,30 @@ class EnhancedGradientDescentVisualizer:
                np.exp(0.5 * (np.cos(2 * np.pi * x) + np.cos(2 * np.pi * y))) + np.e + 20
     
     def ackley_grad(self, x, y):
-        # Simplified gradient for Ackley function
-        r = np.sqrt(x**2 + y**2)
-        if r == 0:
-            return np.array([0, 0])
-        dx = (0.2 * x / r) * np.exp(-0.2 * r) + 2 * np.pi * np.sin(2 * np.pi * x) * np.exp(0.5 * (np.cos(2 * np.pi * x) + np.cos(2 * np.pi * y)))
-        dy = (0.2 * y / r) * np.exp(-0.2 * r) + 2 * np.pi * np.sin(2 * np.pi * y) * np.exp(0.5 * (np.cos(2 * np.pi * x) + np.cos(2 * np.pi * y)))
-        return np.array([dx, dy])
+        # Numerical gradient for stability
+        h = 1e-8
+        grad_x = (self.ackley(x + h, y) - self.ackley(x - h, y)) / (2 * h)
+        grad_y = (self.ackley(x, y + h) - self.ackley(x, y - h)) / (2 * h)
+        return np.array([grad_x, grad_y])
     
     def rastrigin(self, x, y):
         A = 10
         return A * 2 + (x**2 - A * np.cos(2 * np.pi * x)) + (y**2 - A * np.cos(2 * np.pi * y))
     
     def rastrigin_grad(self, x, y):
-        dx = 2*x + 2 * np.pi * 10 * np.sin(2 * np.pi * x)
-        dy = 2*y + 2 * np.pi * 10 * np.sin(2 * np.pi * y)
-        return np.array([dx, dy])
+        # Numerical gradient for stability
+        h = 1e-8
+        grad_x = (self.rastrigin(x + h, y) - self.rastrigin(x - h, y)) / (2 * h)
+        grad_y = (self.rastrigin(x, y + h) - self.rastrigin(x, y - h)) / (2 * h)
+        return np.array([grad_x, grad_y])
+    
+    def calculate_loss(self, function_name, point):
+        """Calculate loss for a point, handling both 1D and 2D cases"""
+        func = self.functions[function_name]
+        if function_name == "Quadratic (1D)":
+            return func(point[0])
+        else:
+            return func(point[0], point[1])
 
 def main():
     st.set_page_config(page_title="Enhanced LR Visualizer", layout="wide")
@@ -189,33 +197,38 @@ def main():
     # Main content area
     if st.sidebar.button("🚀 Run Optimization", type="primary"):
         with st.spinner("Running optimization..."):
-            # Run optimization based on selected method
-            if optimizer_type == "Vanilla GD":
-                points, losses = vanilla_gradient_descent(
-                    visualizer, function_type, initial_point, learning_rate, iterations
+            try:
+                # Run optimization based on selected method
+                if optimizer_type == "Vanilla GD":
+                    points, losses = vanilla_gradient_descent(
+                        visualizer, function_type, initial_point, learning_rate, iterations
+                    )
+                elif optimizer_type == "Momentum":
+                    points, losses = momentum_gradient_descent(
+                        visualizer, function_type, initial_point, learning_rate, iterations, momentum
+                    )
+                elif optimizer_type == "Adam":
+                    points, losses = adam_optimizer(
+                        visualizer, function_type, initial_point, learning_rate, iterations, beta1, beta2
+                    )
+                elif optimizer_type == "RMSprop":
+                    points, losses = rmsprop_optimizer(
+                        visualizer, function_type, initial_point, learning_rate, iterations, rho
+                    )
+                
+                # Create comprehensive visualizations
+                create_enhanced_visualizations(
+                    visualizer, function_type, points, losses, learning_rate, 
+                    optimizer_type, show_3d, show_contour, show_animation
                 )
-            elif optimizer_type == "Momentum":
-                points, losses = momentum_gradient_descent(
-                    visualizer, function_type, initial_point, learning_rate, iterations, momentum
-                )
-            elif optimizer_type == "Adam":
-                points, losses = adam_optimizer(
-                    visualizer, function_type, initial_point, learning_rate, iterations, beta1, beta2
-                )
-            elif optimizer_type == "RMSprop":
-                points, losses = rmsprop_optimizer(
-                    visualizer, function_type, initial_point, learning_rate, iterations, rho
-                )
-            
-            # Create comprehensive visualizations
-            create_enhanced_visualizations(
-                visualizer, function_type, points, losses, learning_rate, 
-                optimizer_type, show_3d, show_contour, show_animation
-            )
-            
-            # Learning rate comparison if enabled
-            if show_comparison:
-                create_lr_comparison(visualizer, function_type, initial_point, iterations, optimizer_type)
+                
+                # Learning rate comparison if enabled
+                if show_comparison:
+                    create_lr_comparison(visualizer, function_type, initial_point, iterations, optimizer_type)
+                    
+            except Exception as e:
+                st.error(f"Error during optimization: {str(e)}")
+                st.info("Try adjusting parameters or using a different function")
 
 def vanilla_gradient_descent(visualizer, function_name, initial_point, learning_rate, iterations):
     return run_optimization(visualizer, function_name, initial_point, learning_rate, iterations)
@@ -228,13 +241,20 @@ def momentum_gradient_descent(visualizer, function_name, initial_point, learning
     velocity = np.zeros_like(initial_point)
     
     for i in range(iterations):
-        grad = visualizer.gradients[function_name](*current_point)
-        velocity = momentum * velocity + learning_rate * grad
-        current_point = current_point - velocity
-        points.append(current_point.copy())
-        losses.append(visualizer.calculate_loss(function_name, current_point))
-        
-        if np.any(np.isnan(current_point)) or np.any(np.abs(current_point) > 1e10):
+        try:
+            grad = visualizer.gradients[function_name](*current_point)
+            velocity = momentum * velocity + learning_rate * grad
+            current_point = current_point - velocity
+            points.append(current_point.copy())
+            losses.append(visualizer.calculate_loss(function_name, current_point))
+            
+            # Early stopping for divergence
+            if (np.any(np.isnan(current_point)) or 
+                np.any(np.abs(current_point) > 1e10) or 
+                np.any(np.abs(grad) > 1e10)):
+                break
+        except Exception as e:
+            st.warning(f"Stopping early due to numerical issues: {str(e)}")
             break
             
     return np.array(points), np.array(losses)
@@ -249,19 +269,26 @@ def adam_optimizer(visualizer, function_name, initial_point, learning_rate, iter
     epsilon = 1e-8
     
     for t in range(1, iterations + 1):
-        grad = visualizer.gradients[function_name](*current_point)
-        
-        m = beta1 * m + (1 - beta1) * grad
-        v = beta2 * v + (1 - beta2) * (grad ** 2)
-        
-        m_hat = m / (1 - beta1 ** t)
-        v_hat = v / (1 - beta2 ** t)
-        
-        current_point = current_point - learning_rate * m_hat / (np.sqrt(v_hat) + epsilon)
-        points.append(current_point.copy())
-        losses.append(visualizer.calculate_loss(function_name, current_point))
-        
-        if np.any(np.isnan(current_point)) or np.any(np.abs(current_point) > 1e10):
+        try:
+            grad = visualizer.gradients[function_name](*current_point)
+            
+            m = beta1 * m + (1 - beta1) * grad
+            v = beta2 * v + (1 - beta2) * (grad ** 2)
+            
+            m_hat = m / (1 - beta1 ** t)
+            v_hat = v / (1 - beta2 ** t)
+            
+            current_point = current_point - learning_rate * m_hat / (np.sqrt(v_hat) + epsilon)
+            points.append(current_point.copy())
+            losses.append(visualizer.calculate_loss(function_name, current_point))
+            
+            # Early stopping for divergence
+            if (np.any(np.isnan(current_point)) or 
+                np.any(np.abs(current_point) > 1e10) or 
+                np.any(np.abs(grad) > 1e10)):
+                break
+        except Exception as e:
+            st.warning(f"Stopping early due to numerical issues: {str(e)}")
             break
             
     return np.array(points), np.array(losses)
@@ -275,15 +302,22 @@ def rmsprop_optimizer(visualizer, function_name, initial_point, learning_rate, i
     epsilon = 1e-8
     
     for i in range(iterations):
-        grad = visualizer.gradients[function_name](*current_point)
-        
-        cache = rho * cache + (1 - rho) * (grad ** 2)
-        current_point = current_point - learning_rate * grad / (np.sqrt(cache) + epsilon)
-        
-        points.append(current_point.copy())
-        losses.append(visualizer.calculate_loss(function_name, current_point))
-        
-        if np.any(np.isnan(current_point)) or np.any(np.abs(current_point) > 1e10):
+        try:
+            grad = visualizer.gradients[function_name](*current_point)
+            
+            cache = rho * cache + (1 - rho) * (grad ** 2)
+            current_point = current_point - learning_rate * grad / (np.sqrt(cache) + epsilon)
+            
+            points.append(current_point.copy())
+            losses.append(visualizer.calculate_loss(function_name, current_point))
+            
+            # Early stopping for divergence
+            if (np.any(np.isnan(current_point)) or 
+                np.any(np.abs(current_point) > 1e10) or 
+                np.any(np.abs(grad) > 1e10)):
+                break
+        except Exception as e:
+            st.warning(f"Stopping early due to numerical issues: {str(e)}")
             break
             
     return np.array(points), np.array(losses)
@@ -295,12 +329,19 @@ def run_optimization(visualizer, function_name, initial_point, learning_rate, it
     current_point = initial_point.copy()
     
     for i in range(iterations):
-        grad = visualizer.gradients[function_name](*current_point)
-        current_point = current_point - learning_rate * grad
-        points.append(current_point.copy())
-        losses.append(visualizer.calculate_loss(function_name, current_point))
-        
-        if np.any(np.isnan(current_point)) or np.any(np.abs(current_point) > 1e10):
+        try:
+            grad = visualizer.gradients[function_name](*current_point)
+            current_point = current_point - learning_rate * grad
+            points.append(current_point.copy())
+            losses.append(visualizer.calculate_loss(function_name, current_point))
+            
+            # Early stopping for divergence
+            if (np.any(np.isnan(current_point)) or 
+                np.any(np.abs(current_point) > 1e10) or 
+                np.any(np.abs(grad) > 1e10)):
+                break
+        except Exception as e:
+            st.warning(f"Stopping early due to numerical issues: {str(e)}")
             break
             
     return np.array(points), np.array(losses)
@@ -341,30 +382,31 @@ def create_optimization_path_tab(visualizer, function_type, points, losses, show
         # Real-time progress indicator
         st.subheader("🔄 Optimization Progress")
         
-        progress_data = {
-            'Iteration': range(len(points)),
-            'Loss': losses,
-            'Step Size': [np.linalg.norm(points[i] - points[i-1]) if i > 0 else 0 for i in range(len(points))]
-        }
-        df = pd.DataFrame(progress_data)
-        
-        # Current status
-        current_iter = len(points) - 1
-        current_loss = losses[-1]
-        total_improvement = losses[0] - losses[-1]
-        
-        st.metric("Current Iteration", current_iter)
-        st.metric("Current Loss", f"{current_loss:.6f}")
-        st.metric("Total Improvement", f"{total_improvement:.6f}")
-        
-        # Step size chart
         if len(points) > 1:
-            chart = alt.Chart(df).mark_line().encode(
-                x='Iteration',
-                y='Step Size',
-                tooltip=['Iteration', 'Step Size']
-            ).properties(title="Step Size Over Time")
-            st.altair_chart(chart, use_container_width=True)
+            progress_data = {
+                'Iteration': range(len(points)),
+                'Loss': losses,
+                'Step Size': [np.linalg.norm(points[i] - points[i-1]) if i > 0 else 0 for i in range(len(points))]
+            }
+            df = pd.DataFrame(progress_data)
+            
+            # Current status
+            current_iter = len(points) - 1
+            current_loss = losses[-1]
+            total_improvement = losses[0] - losses[-1]
+            
+            st.metric("Current Iteration", current_iter)
+            st.metric("Current Loss", f"{current_loss:.6f}")
+            st.metric("Total Improvement", f"{total_improvement:.6f}")
+            
+            # Step size chart
+            if len(points) > 1:
+                chart = alt.Chart(df).mark_line().encode(
+                    x='Iteration',
+                    y='Step Size',
+                    tooltip=['Iteration', 'Step Size']
+                ).properties(title="Step Size Over Time")
+                st.altair_chart(chart, use_container_width=True)
 
 def create_enhanced_1d_plot(visualizer, function_type, points, losses):
     x_vals = np.linspace(-5, 5, 200)
@@ -379,7 +421,7 @@ def create_enhanced_1d_plot(visualizer, function_type, points, losses):
         line=dict(color='lightblue', width=3), opacity=0.7
     ), row=1, col=1)
     
-    path_losses = visualizer.quadratic_1d(points.flatten())
+    path_losses = [visualizer.calculate_loss(function_type, np.array([x])) for x in points.flatten()]
     fig.add_trace(go.Scatter(
         x=points.flatten(), y=path_losses, mode='markers+lines',
         name='Optimization Path', line=dict(color='red', width=4),
@@ -389,7 +431,7 @@ def create_enhanced_1d_plot(visualizer, function_type, points, losses):
     ), row=1, col=1)
     
     # Gradient magnitude
-    gradients = [abs(visualizer.quadratic_1d_grad(x)) for x in points.flatten()]
+    gradients = [abs(visualizer.quadratic_1d_grad(x[0])) for x in points]
     fig.add_trace(go.Scatter(
         x=np.arange(len(gradients)), y=gradients,
         mode='lines+markers', name='Gradient Magnitude',
@@ -437,7 +479,7 @@ def create_enhanced_2d_plot(visualizer, function_type, points, show_contour):
         ))
         
         # Add direction arrows
-        if i % 5 == 0:  # Add arrows every 5 steps to avoid clutter
+        if i % 5 == 0 and i < len(points)-2:  # Add arrows every 5 steps to avoid clutter
             fig.add_annotation(
                 x=points[i, 0], y=points[i, 1],
                 ax=points[i+1, 0], ay=points[i+1, 1],
@@ -594,7 +636,11 @@ def create_performance_metrics_tab(visualizer, function_type, points, losses, op
         st.metric("Improvement/Iteration", f"{improvement_per_iter:.6f}")
     
     with col3:
-        final_grad_norm = np.linalg.norm(visualizer.gradients[function_type](*points[-1]))
+        if len(points[-1]) == 1:
+            final_grad_norm = abs(visualizer.gradients[function_type](points[-1][0]))
+        else:
+            final_grad_norm = np.linalg.norm(visualizer.gradients[function_type](points[-1][0], points[-1][1]))
+        
         total_distance = np.sum([np.linalg.norm(points[i] - points[i-1]) for i in range(1, len(points))])
         st.metric("Final Gradient Norm", f"{final_grad_norm:.6f}")
         st.metric("Total Path Length", f"{total_distance:.2f}")
@@ -602,36 +648,51 @@ def create_performance_metrics_tab(visualizer, function_type, points, losses, op
     # Efficiency analysis
     st.subheader("⏱️ Efficiency Metrics")
     
+    if len(losses) >= 10:
+        stability_score = min(100, (1 - np.std(losses[-10:]) / (np.mean(losses[-10:]) + 1e-8)) * 100)
+    else:
+        stability_score = 50
+    
     efficiency_data = {
         'Metric': ['Convergence Speed', 'Stability', 'Final Accuracy', 'Overall Efficiency'],
-        'Score': [min(100, (len(points) / 100) * 100), 
-                 min(100, (1 - np.std(losses[-10:]) / np.mean(losses[-10:])) * 100) if len(losses) >= 10 else 50,
+        'Score': [min(100, (100 / len(points)) * 100), 
+                 stability_score,
                  min(100, (1 / (losses[-1] + 1e-8)) * 10),
                  min(100, (total_improvement / len(points)) * 1000)]
     }
     
-    df_eff = pd.DataFrame(efficiency_data)
-    
-    fig_gauge = go.Figure()
-    for i, metric in enumerate(efficiency_data['Metric']):
-        fig_gauge.add_trace(go.Indicator(
-            mode = "gauge+number",
-            value = efficiency_data['Score'][i],
-            title = {'text': metric},
-            domain = {'row': i//2, 'column': i%2},
-            gauge = {'axis': {'range': [0, 100]},
-                    'bar': {'color': "darkblue"},
-                    'steps': [{'range': [0, 50], 'color': "lightgray"},
-                             {'range': [50, 80], 'color': "gray"},
-                             {'range': [80, 100], 'color': "lightgreen"}]}
-        ))
-    
-    fig_gauge.update_layout(
-        grid = {'rows': 2, 'columns': 2, 'pattern': "independent"},
-        height=400
+    # Create gauge chart
+    fig_gauges = make_subplots(
+        rows=2, cols=2,
+        specs=[[{'type': 'indicator'}, {'type': 'indicator'}],
+               [{'type': 'indicator'}, {'type': 'indicator'}]],
+        subplot_titles=efficiency_data['Metric']
     )
     
-    st.plotly_chart(fig_gauge, use_container_width=True)
+    colors = ['red', 'orange', 'yellow', 'green']
+    for i, metric in enumerate(efficiency_data['Metric']):
+        row = i // 2 + 1
+        col = i % 2 + 1
+        fig_gauges.add_trace(
+            go.Indicator(
+                mode="gauge+number",
+                value=efficiency_data['Score'][i],
+                title={'text': metric},
+                gauge={
+                    'axis': {'range': [0, 100]},
+                    'bar': {'color': colors[i]},
+                    'steps': [
+                        {'range': [0, 50], 'color': "lightgray"},
+                        {'range': [50, 80], 'color': "gray"},
+                        {'range': [80, 100], 'color': "lightgreen"}
+                    ]
+                }
+            ),
+            row=row, col=col
+        )
+    
+    fig_gauges.update_layout(height=400, showlegend=False)
+    st.plotly_chart(fig_gauges, use_container_width=True)
 
 def create_educational_insights_tab(learning_rate, losses, optimizer_type):
     st.subheader("🎓 Learning Rate Insights")
@@ -702,38 +763,28 @@ def create_lr_comparison(visualizer, function_type, initial_point, iterations, o
         fig_compare = go.Figure()
         
         for i, lr in enumerate(lr_list):
-            if optimizer_type == "Vanilla GD":
-                points, losses = vanilla_gradient_descent(visualizer, function_type, initial_point, lr, iterations)
-            elif optimizer_type == "Momentum":
-                points, losses = momentum_gradient_descent(visualizer, function_type, initial_point, lr, iterations, 0.9)
-            
-            color = colors[i % len(colors)]
-            fig_compare.add_trace(go.Scatter(
-                x=np.arange(len(losses)), y=losses,
-                mode='lines', name=f'LR = {lr}',
-                line=dict(color=color, width=3)
-            ))
-            
-            comparison_data.append({
-                'Learning Rate': lr,
-                'Final Loss': losses[-1],
-                'Iterations to Converge': len(losses) - 1,
-                'Total Improvement': losses[0] - losses[-1]
-            })
+            try:
+                if optimizer_type == "Vanilla GD":
+                    points, losses = vanilla_gradient_descent(visualizer, function_type, initial_point, lr, iterations)
+                elif optimizer_type == "Momentum":
+                    points, losses = momentum_gradient_descent(visualizer, function_type, initial_point, lr, iterations, 0.9)
+                
+                color = colors[i % len(colors)]
+                fig_compare.add_trace(go.Scatter(
+                    x=np.arange(len(losses)), y=losses,
+                    mode='lines', name=f'LR = {lr}',
+                    line=dict(color=color, width=3)
+                ))
+                
+                comparison_data.append({
+                    'Learning Rate': lr,
+                    'Final Loss': losses[-1],
+                    'Iterations to Converge': len(losses) - 1,
+                    'Total Improvement': losses[0] - losses[-1]
+                })
+            except Exception as e:
+                st.warning(f"Failed to run with LR={lr}: {str(e)}")
         
         fig_compare.update_layout(
             title="Loss Curves for Different Learning Rates",
-            xaxis_title="Iteration",
-            yaxis_title="Loss",
-            yaxis_type="log",
-            height=500
-        )
-        
-        st.plotly_chart(fig_compare, use_container_width=True)
-        
-        # Comparison table
-        df_compare = pd.DataFrame(comparison_data)
-        st.dataframe(df_compare.style.highlight_min(subset=['Final Loss'], color='lightgreen'), use_container_width=True)
-
-if __name__ == "__main__":
-    main()
+            xaxis
