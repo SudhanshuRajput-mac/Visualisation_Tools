@@ -395,10 +395,11 @@ def main():
                 x=x, y=pdf, mode='lines', name='PDF',
                 line=dict(color=visualizer.color_palette[0], width=3),
                 hovertemplate='<b>x</b>: %{x:.3f}<br><b>f(x)</b>: %{y:.3f}<extra></extra>',
-                fill='tozeroy', fillcolor=f'{visualizer.color_palette[0]}20'
+                fill='tozeroy', 
+                fillcolor=f'rgba{tuple(int(visualizer.color_palette[0].lstrip("#")[i:i+2], 16) for i in (0, 2, 4)) + (0.2,)}'
             ),
-            row=1, col=1
-        )
+        row=1, col=1
+     )
         
         # Enhanced CDF plot
         fig.add_trace(
